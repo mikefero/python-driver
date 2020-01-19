@@ -19,7 +19,7 @@ import time
 import six
 from warnings import warn
 
-from cassandra.query import SimpleStatement, BatchType as CBatchType, BatchStatement
+from cassandra.query import SimpleStatement, BatchType, BatchStatement
 from cassandra.cqlengine import columns, CQLEngineException, ValidationError, UnicodeMixin
 from cassandra.cqlengine import connection as conn
 from cassandra.cqlengine.functions import Token, BaseQueryFunction, QueryValue
@@ -77,7 +77,7 @@ def check_applied(result):
     except Exception:
         applied = True  # result was not LWT form
     if not applied:
-        raise LWTException(result.one())
+        raise LWTException(result[0])
 
 
 class AbstractQueryableColumn(UnicodeMixin):
@@ -222,7 +222,8 @@ class BatchQuery(object):
             self._execute_callbacks()
             return CQLEngineFuture()
 
-        opener = 'BEGIN ' + (str(self.batch_type) + ' ' if self.batch_type else '') + ' BATCH'
+        batch_type = None if self.batch_type is BatchType.LOGGED else self.batch_type
+        opener = 'BEGIN ' + (str(batch_type) + ' ' if batch_type else '') + ' BATCH'
         if self.timestamp:
 
             if isinstance(self.timestamp, six.integer_types):

@@ -90,7 +90,7 @@ class DseCCMClusterTest(unittest.TestCase):
         self.assertFalse(result)
 
         result = session.execute("SELECT * FROM clustertests.cf0")
-        self.assertEqual([('a', 'b', 'c')], result)
+        self.assertEqual([('a', 'b', 'c')], list(result))
 
         execute_with_long_wait_retry(session, "DROP KEYSPACE clustertests")
 

@@ -491,7 +491,7 @@ class PreparedStatementMetdataTest(unittest.TestCase):
 
             session = cluster.connect()
             select_statement = session.prepare("SELECT * FROM system.local")
-            self.assertNotEqual(select_statement.result_metadata, None)
+            self.assertIsNotNone(select_statement.result_metadata)
             future = session.execute_async(select_statement)
             results = future.result()
             if base_line is None:

@@ -108,4 +108,4 @@ class TestConsistency(BaseConsistencyTest):
         # verify that this session default is set according to connection.setup
         # assumes tests/cqlengine/__init__ setup uses CL.ONE
         session = connection.get_session()
-        self.assertEqual(session._get_execution_profile(EXEC_PROFILE_DEFAULT).consistency_level, ConsistencyLevel.ONE)
+        self.assertEqual(session.get_execution_profile(EXEC_PROFILE_DEFAULT).consistency_level, ConsistencyLevel.ONE)

@@ -141,7 +141,7 @@ class CustomProtocolHandlerTest(unittest.TestCase):
         continuous_paging_options = ContinuousPagingOptions(max_pages=max_pages,
                                                             max_pages_per_second=max_pages_per_second)
 
-        future = self._send_query_message(session, timeout=session.default_timeout,
+        future = self._send_query_message(session, timeout=cluster._default_timeout,
                                         consistency_level=ConsistencyLevel.ONE,
                             continuous_paging_options=continuous_paging_options)
 

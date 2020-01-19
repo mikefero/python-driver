@@ -4511,8 +4511,9 @@ class ResultSetIterator(object):
                 self._result_set._current_rows = []
                 raise
 
-        self._result_set.fetch_next_page()
-        self._result_set._page_iter = iter(self._result_set._current_rows)
+        if not self._result_set.response_future._continuous_paging_session:
+            self._result_set.fetch_next_page()
+            self._result_set._page_iter = iter(self._result_set._current_rows)
 
         return next(self._result_set._page_iter)
 

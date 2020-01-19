@@ -68,6 +68,16 @@ class CollectionsModel(Model):
     text_map = columns.Map(columns.Text, columns.Text, required=False)
 
 
+class TestQueryUpdateModel(Model):
+    partition = columns.UUID(primary_key=True, default=uuid4)
+    cluster = columns.Integer(primary_key=True)
+    count = columns.Integer(required=False)
+    text = columns.Text(required=False, index=True)
+    text_set = columns.Set(columns.Text, required=False)
+    text_list = columns.List(columns.Text, required=False)
+    text_map = columns.Map(columns.Text, columns.Text, required=False)
+
+
 class TestSetModel(Model):
     partition = columns.UUID(primary_key=True, default=uuid4)
     int_set = columns.Set(columns.Integer, required=False)

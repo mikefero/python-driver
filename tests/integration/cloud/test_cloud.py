@@ -159,7 +159,6 @@ class CloudTests(CloudProxyCluster):
 
     def test_default_consistency(self):
         self.connect(self.creds)
-        self.assertEqual(self.session.default_consistency_level, ConsistencyLevel.LOCAL_QUORUM)
         self.assertEqual(self.cluster.profile_manager.default.consistency_level, ConsistencyLevel.LOCAL_QUORUM)
 
     def test_default_consistency_of_execution_profiles(self):

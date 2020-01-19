@@ -19,9 +19,7 @@ from cassandra.cqlengine.models import Model
 from cassandra.cqlengine.query import BatchQuery, DMLQuery
 from tests.integration.cqlengine.base import BaseCassEngTestCase
 from tests.integration.cqlengine import execute_count, mock_execute_async
-from cassandra.query import BatchType as cassandra_BatchType
-from cassandra.cqlengine.query import BatchType as cqlengine_BatchType
-
+from cassandra.query import BatchType
 
 
 class TestMultiKeyModel(Model):
@@ -233,14 +231,14 @@ class BatchTypeQueryTests(BaseCassEngTestCase):
 
         @test_category query
         """
-        with BatchQuery(batch_type=cassandra_BatchType.UNLOGGED) as b:
+        with BatchQuery(batch_type=BatchType.UNLOGGED) as b:
             TestMultiKeyModel.batch(b).create(partition=1, cluster=1)
             TestMultiKeyModel.batch(b).create(partition=1, cluster=2)
 
         obj = TestMultiKeyModel.objects(partition=1)
         self.assertEqual(2, len(obj))
 
-        with BatchQuery(batch_type=cassandra_BatchType.LOGGED) as b:
+        with BatchQuery(batch_type=BatchType.LOGGED) as b:
             TestMultiKeyModel.batch(b).create(partition=1, cluster=1)
             TestMultiKeyModel.batch(b).create(partition=1, cluster=2)
 
