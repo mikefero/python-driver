@@ -208,7 +208,7 @@ class AbstractTraversalTest():
         s.execute_graph("schema.config().option('graph.allow_scan').set('true');")
         v = s.execute_graph('''v = graph.addVertex('MLP')
                                  v.property('key', 'meta_prop', 'k0', 'v0', 'k1', 'v1')
-                                 v''')[0]
+                                 v''').one()
 
         g = self.fetch_traversal_source()
 
@@ -243,14 +243,14 @@ class AbstractTraversalTest():
 
         mpw1v = s.execute_graph('''v = graph.addVertex('MPW1')
                                  v.property('mult_key', 'value')
-                                 v''')[0]
+                                 v''').one()
 
-        mpw2v = s.execute_graph('''g.addV('MPW2').property('mult_key', 'value0').property('mult_key', 'value1')''')[0]
+        mpw2v = s.execute_graph('''g.addV('MPW2').property('mult_key', 'value0').property('mult_key', 'value1')''').one()
 
         g = self.fetch_traversal_source()
         traversal = g.V(mpw1v.id).properties()
 
-        vertex_props = self.execute_traversal(traversal)
+        vertex_props = list(self.execute_traversal(traversal))
 
         self.assertEqual(len(vertex_props), 1)
 
@@ -261,7 +261,7 @@ class AbstractTraversalTest():
          #v = s.execute_graph('''g.addV(label, 'MPW2', 'mult_key', 'value0', 'mult_key', 'value1')''')[0]
         traversal = g.V(mpw2v.id).properties()
 
-        vertex_props = self.execute_traversal(traversal)
+        vertex_props = list(self.execute_traversal(traversal))
 
         self.assertEqual(len(vertex_props), 2)
         self.assertEqual(self.fetch_key_from_prop(vertex_props[0]), 'mult_key')
@@ -272,9 +272,9 @@ class AbstractTraversalTest():
         # single_with_one_value
         v = s.execute_graph('''v = graph.addVertex('SW1')
                                  v.property('single_key', 'value')
-                                 v''')[0]
+                                 v''').one()
         traversal = g.V(v.id).properties()
-        vertex_props = self.execute_traversal(traversal)
+        vertex_props = list(self.execute_traversal(traversal))
         self.assertEqual(len(vertex_props), 1)
         self.assertEqual(self.fetch_key_from_prop(vertex_props[0]), "single_key")
         self.assertEqual(vertex_props[0].value, "value")

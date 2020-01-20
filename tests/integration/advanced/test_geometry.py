@@ -160,7 +160,7 @@ class AbstractGeometricTypeTest():
         bound_statement = prepared.bind((uuid_key, UDT1(self.original_value)))
         self.session.execute(bound_statement)
         rs = self.session.execute("SELECT {0} from {1} where k={2}".format('u', 'tbl', uuid_key))
-        retrieved_udt = rs[0]._asdict()['u']
+        retrieved_udt = rs.one()._asdict()['u']
 
         self.assertEqual(retrieved_udt.g, self.original_value)
 
@@ -176,7 +176,7 @@ class AbstractGeometricTypeTest():
         bound_statement = prepared.bind((self.original_value, 1))
         self.session.execute(bound_statement)
         rs = self.session.execute("SELECT k, v FROM tblpk")
-        foundpk = rs[0]._asdict()['k']
+        foundpk = rs.one()._asdict()['k']
         self.assertEqual(foundpk, self.original_value)
 
     def validate(self, value, key, expected):
@@ -184,7 +184,7 @@ class AbstractGeometricTypeTest():
         Simple utility method used for validation of inserted types.
         """
         rs = self.session.execute("SELECT {0} from tbl where k={1}".format(value, key))
-        retrieved = rs[0]._asdict()[value]
+        retrieved = rs.one()._asdict()[value]
         self.assertEqual(expected, retrieved)
 
     def test_insert_empty_with_string(self):

@@ -259,10 +259,12 @@ class MetricsNamespaceTest(BasicSharedKeyspaceUnitTestCaseRF3WM):
         """
         ep = ExecutionProfile(retry_policy=FallthroughRetryPolicy())
         cluster2 = Cluster(metrics_enabled=True, protocol_version=PROTOCOL_VERSION,
-                           execution_profiles={EXEC_PROFILE_DEFAULT: ep})
+                           execution_profiles={EXEC_PROFILE_DEFAULT: ep},
+                           monitor_reporting_enabled=False)
 
         cluster3 = Cluster(metrics_enabled=True, protocol_version=PROTOCOL_VERSION,
-                           execution_profiles={EXEC_PROFILE_DEFAULT: ep})
+                           execution_profiles={EXEC_PROFILE_DEFAULT: ep},
+                           monitor_reporting_enabled=False)
 
         # Ensure duplicate metric names are not allowed
         cluster2.metrics.set_stats_name("appcluster")

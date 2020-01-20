@@ -45,5 +45,5 @@ class SparkLBTests(BasicGraphUnitTestCase):
         for i in range(3):
             to_run = SimpleGraphStatement("g.V().count()")
             rs = self.session.execute_graph(to_run, execution_profile=EXEC_PROFILE_GRAPH_ANALYTICS_DEFAULT)
-            self.assertEqual(rs[0].value, 6)
+            self.assertEqual(rs.one().value, 6)
             self.assertEqual(rs.response_future._current_host.address, spark_master)

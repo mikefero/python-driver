@@ -776,6 +776,7 @@ class ResultMessage(_MessageType):
             coltype = self.read_type(f, user_type_map)
             bind_metadata.append(ColumnMetadata(colksname, colcfname, colname, coltype))
 
+        self.recv_results_metadata(f, user_type_map)
         self.bind_metadata = bind_metadata
         self.pk_indexes = pk_indexes
 

@@ -21,7 +21,7 @@ from cassandra.cqlengine import columns
 from cassandra.cqlengine.query import QueryException
 
 from tests.integration.cqlengine import is_prepend_reversed
-from tests.integration.cqlengine.base import BaseCassEngTestCase, TestQueryUpdateModel, TestMultiKeyModel
+from tests.integration.cqlengine.base import BaseCassEngTestCase, TestMultiKeyModel, CollectionsModel
 from tests.integration.cqlengine import execute_count
 
 

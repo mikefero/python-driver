@@ -1058,7 +1058,7 @@ class TestDateRangePrepared(AbstractDateRangeTest, BasicSharedKeyspaceUnitTestCa
             prep_sel = self.session.prepare("SELECT * FROM tab WHERE dr = '%s' " % (to_insert,))
             results =  self.session.execute(prep_sel)
 
-        dr = results[0].dr
+        dr = results.one()  .dr
         # sometimes this is truncated in the assertEquals output on failure;
         if isinstance(expected, six.string_types):
             self.assertEqual(str(dr), expected)
@@ -1112,7 +1112,7 @@ class TestDateRangeSimple(AbstractDateRangeTest, BasicSharedKeyspaceUnitTestCase
         query = "SELECT * FROM tab WHERE dr = '{0}' ".format(to_insert)
         results= self.session.execute("SELECT * FROM tab WHERE dr = '{0}' ".format(to_insert))
 
-        dr = results[0].dr
+        dr = results.one().dr
         # sometimes this is truncated in the assertEquals output on failure;
         if isinstance(expected, six.string_types):
             self.assertEqual(str(dr), expected)

@@ -257,11 +257,11 @@ def reset_graph(session, graph_name):
 def wait_for_graph_inserted(session, graph_name):
         count = 0
         exists = session.execute_graph('system.graph(name).exists()', {'name': graph_name},
-                              execution_profile=EXEC_PROFILE_GRAPH_SYSTEM_DEFAULT)[0].value
+                              execution_profile=EXEC_PROFILE_GRAPH_SYSTEM_DEFAULT).one().value
         while not exists and count < 50:
             time.sleep(1)
             exists = session.execute_graph('system.graph(name).exists()', {'name': graph_name},
-                              execution_profile=EXEC_PROFILE_GRAPH_SYSTEM_DEFAULT)[0].value
+                              execution_profile=EXEC_PROFILE_GRAPH_SYSTEM_DEFAULT).one().value
         return exists
 
 

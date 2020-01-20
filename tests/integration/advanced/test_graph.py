@@ -212,13 +212,13 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         s.execute_graph("null", {"doesn't": "matter", "what's": "passed"})
 
         # multiple params
-        results = s.execute_graph("[a, b]", {'a': 0, 'b': 1})
+        results = list(s.execute_graph("[a, b]", {'a': 0, 'b': 1}))
         self.assertEqual(results[0].value, 0)
         self.assertEqual(results[1].value, 1)
 
         # different value types
         for param in (None, "string", 1234, 5.678, True, False):
-            result = s.execute_graph('x', {'x': param})[0]
+            result = s.execute_graph('x', {'x': param}).one()
             self.assertEqual(result.value, param)
 
     def test_consistency_passing(self):
@@ -357,14 +357,14 @@ class BasicGraphTest(BasicGraphUnitTestCase):
 
         v = s.execute_graph('''v = graph.addVertex('MPW1')
                                  v.property('mult_key', 'value')
-                                 v''')[0]
+                                 v''').one()
         self.assertEqual(len(v.properties), 1)
         self.assertEqual(len(v.properties['mult_key']), 1)
         self.assertEqual(v.properties['mult_key'][0].label, 'mult_key')
         self.assertEqual(v.properties['mult_key'][0].value, 'value')
 
         # multiple_with_two_values
-        v = s.execute_graph('''g.addV('MPW1').property('mult_key', 'value0').property('mult_key', 'value1')''')[0]
+        v = s.execute_graph('''g.addV('MPW1').property('mult_key', 'value0').property('mult_key', 'value1')''').one()
         self.assertEqual(len(v.properties), 1)
         self.assertEqual(len(v.properties['mult_key']), 2)
         self.assertEqual(v.properties['mult_key'][0].label, 'mult_key')
@@ -375,7 +375,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         # single_with_one_value
         v = s.execute_graph('''v = graph.addVertex('SW1')
                                  v.property('single_key', 'value')
-                                 v''')[0]
+                                 v''').one()
         self.assertEqual(len(v.properties), 1)
         self.assertEqual(len(v.properties['single_key']), 1)
         self.assertEqual(v.properties['single_key'][0].label, 'single_key')
@@ -385,7 +385,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         with self.assertRaises(InvalidRequest):
             v = s.execute_graph('''v = graph.addVertex('SW1')
                                  v.property('single_key', 'value0').property('single_key', 'value1')
-                                 v''')[0]
+                                 v''').one()
 
     def test_vertex_property_properties(self):
         """
@@ -403,7 +403,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         s.execute_graph("schema.vertexLabel('MLP').properties('key').ifNotExists().create();")
         v = s.execute_graph('''v = graph.addVertex('MLP')
                                  v.property('key', 'value', 'k0', 'v0', 'k1', 'v1')
-                                 v''')[0]
+                                 v''').one()
         self.assertEqual(len(v.properties), 1)
         self.assertEqual(len(v.properties['key']), 1)
         p = v.properties['key'][0]
@@ -415,7 +415,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         s = self.session
         statement = SimpleGraphStatement("true")
         ep = self.session.execution_profile_clone_update(EXEC_PROFILE_GRAPH_DEFAULT)
-        self.assertTrue(s.execute_graph(statement, execution_profile=ep)[0].value)
+        self.assertTrue(s.execute_graph(statement, execution_profile=ep).one().value)
 
         # bad graph name to verify it's passed
         ep.graph_options = ep.graph_options.copy()
@@ -438,7 +438,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         # default is passed down
         default_graph_profile = s.cluster.profile_manager.profiles[EXEC_PROFILE_GRAPH_DEFAULT]
         rs = self.session.execute_graph(query)
-        self.assertEqual(rs[0].value, value)
+        self.assertEqual(rs.one().value, value)
         self.assertEqual(rs.response_future.timeout, default_graph_profile.request_timeout)
 
         # tiny timeout times out as expected
@@ -467,12 +467,12 @@ class BasicGraphTest(BasicGraphUnitTestCase):
 
         # default is no trace
         rs = s.execute_graph(query)
-        self.assertEqual(rs[0].value, value)
+        self.assertEqual(rs.one().value, value)
         self.assertIsNone(rs.get_query_trace())
 
         # request trace
         rs = s.execute_graph(query, trace=True)
-        self.assertEqual(rs[0].value, value)
+        self.assertEqual(rs.one().value, value)
         qt = rs.get_query_trace(max_wait_sec=10)
         self.assertIsInstance(qt, QueryTrace)
         self.assertIsNotNone(qt.duration)
@@ -483,7 +483,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         # default Results
         default_profile = s.cluster.profile_manager.profiles[EXEC_PROFILE_GRAPH_DEFAULT]
         self.assertEqual(default_profile.row_factory, graph_object_row_factory)
-        result = s.execute_graph("123")[0]
+        result = s.execute_graph("123").one()
         self.assertIsInstance(result, Result)
         self.assertEqual(result.value, 123)
 
@@ -491,7 +491,7 @@ class BasicGraphTest(BasicGraphUnitTestCase):
         prof = s.execution_profile_clone_update(EXEC_PROFILE_GRAPH_DEFAULT, row_factory=single_object_row_factory)
         rs = s.execute_graph("123", execution_profile=prof)
         self.assertEqual(rs.response_future.row_factory, single_object_row_factory)
-        self.assertEqual(json.loads(rs[0]), {'result': 123})
+        self.assertEqual(json.loads(rs.one()), {'result': 123})
 
 
 @requiredse
@@ -711,8 +711,8 @@ class GraphProfileTests(BasicGraphUnitTestCase):
             rs2 = local_session.execute_graph('g.V()', execution_profile='exec_dif_factory')
 
             # Verify default and non default policy works
-            self.assertFalse(isinstance(rs2[0], Vertex))
-            self.assertTrue(isinstance(rs1[0], Vertex))
+            self.assertFalse(isinstance(rs2.one(), Vertex))
+            self.assertTrue(isinstance(rs1.one(), Vertex))
             # Add other policies validate that lbp are honored
             local_cluster.add_execution_profile("exec_dif_ldp", exec_dif_lbp)
             local_session.execute_graph('g.V()', execution_profile="exec_dif_ldp")
