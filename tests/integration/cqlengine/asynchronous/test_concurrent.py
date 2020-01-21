@@ -312,6 +312,16 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
         for i in range(n_iters):
             futures.append(TestMultiKeyModel.create_async(partition=i, cluster=i,
                                                             count=5, text=self.text_to_write))
+
+        for future in futures:
+            future.add_done_callback(check_called)
+
+        wait(futures)
+        self.assertEqual(next(counter), n_iters)
+
+        futures = []
+        counter = count()
+        for i in range(n_iters):
             futures.append(TestMultiKeyModel.get_async(partition=i, cluster=i))
             futures.append(TestMultiKeyModel.objects(partition=i, cluster=i).delete_async())
 
@@ -319,7 +329,7 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
             future.add_done_callback(check_called)
 
         wait(futures)
-        self.assertEqual(next(counter), 3 * n_iters)
+        self.assertEqual(next(counter), 2 * n_iters)
 
     @notwindows
     def test_exception(self):

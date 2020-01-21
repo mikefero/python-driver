@@ -2376,7 +2376,7 @@ class Session(object):
 
     def _on_analytics_master_result(self, response, master_future, query_future):
         try:
-            row = master_future.result()[0]
+            row = master_future.result().one()
             addr = row[0]['location']
             delimiter_index = addr.rfind(':')  # assumes <ip>:<port> - not robust, but that's what is being provided
             if delimiter_index > 0:

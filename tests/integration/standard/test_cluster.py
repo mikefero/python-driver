@@ -1208,13 +1208,13 @@ class ClusterTests(unittest.TestCase):
 
 class ResultSetIteratorTests(BasicSharedKeyspaceUnitTestCase):
 
-    def setUp(self):
-        self.num_rows = 5
-        for i in range(self.num_rows):
-            self.session.execute("INSERT INTO test3rf.test (k, v) VALUES  ({0}, {0})".format(i))
+    NUM_ROWS = 5
 
-    def tearDown(self):
-        self.session.execute("TRUNCATE TABLE test3rf.test")
+    @classmethod
+    def setUpClass(cls):
+        super(ResultSetIteratorTests, cls).setUpClass()
+        for i in range(cls.NUM_ROWS):
+            cls.session.execute("INSERT INTO test3rf.test (k, v) VALUES  ({0}, {0})".format(i))
 
     def test_get_next_resultset(self):
         """
@@ -1229,7 +1229,7 @@ class ResultSetIteratorTests(BasicSharedKeyspaceUnitTestCase):
         result_iterator = iter(ResultSetIterator(results))
 
         itered_results = set()
-        for i in range(self.num_rows):
+        for i in range(self.NUM_ROWS):
             itered_results.add(result_iterator.next())
 
         self.assertEqual(itered_results, {(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)})
