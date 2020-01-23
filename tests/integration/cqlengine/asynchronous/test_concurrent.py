@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 try:
     import unittest2 as unittest
 except ImportError:
@@ -29,6 +29,8 @@ from tests.integration.cqlengine.base import BaseCassEngTestCaseWithTable, TestM
 
 from concurrent.futures import wait
 from itertools import count
+
+log = logging.getLogger(__name__)
 
 
 class ConcurrentTests(BaseCassEngTestCaseWithTable):
@@ -305,10 +307,12 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
         counter = count()
 
         def check_called(response):
+            if response.exception():
+                log.debug(response.exception())
             self.assertIsNotNone(response)
             next(counter)
 
-        n_iters = 10000
+        n_iters = 100
         for i in range(n_iters):
             futures.append(TestMultiKeyModel.create_async(partition=i, cluster=i,
                                                             count=5, text=self.text_to_write))
@@ -318,6 +322,7 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
 
         wait(futures)
         self.assertEqual(next(counter), n_iters)
+        self._verify_reads_from_model(n=100)
 
         futures = []
         counter = count()
@@ -330,6 +335,7 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
 
         wait(futures)
         self.assertEqual(next(counter), 2 * n_iters)
+        self._verify_table_is_empty()
 
     @notwindows
     def test_exception(self):
@@ -487,4 +493,10 @@ class ConcurrentTests(BaseCassEngTestCaseWithTable):
 
     def _verify_table_is_empty(self):
         all_the_rows = TestMultiKeyModel.get_all()
-        self.assertEqual(len(all_the_rows), 0)
+        try:
+            self.assertEqual(len(all_the_rows), 0)
+        except:
+            all_the_rows = TestMultiKeyModel.get_all()
+            for row in all_the_rows:
+                log.debug("Found row: {}".format(row))
+            raise

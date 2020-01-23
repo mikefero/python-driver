@@ -1225,11 +1225,13 @@ class ResultSetIteratorTests(BasicSharedKeyspaceUnitTestCase):
 
         @test_category query
         """
-        results = self.session.execute("SELECT * from test3rf.test")
+        query = SimpleStatement("SELECT * from test3rf.test", consistency_level=ConsistencyLevel.ALL)
+        results = self.session.execute(query)
         result_iterator = iter(ResultSetIterator(results))
 
         itered_results = set()
         for i in range(self.NUM_ROWS):
+            log.debug(itered_results)
             itered_results.add(result_iterator.next())
 
         self.assertEqual(itered_results, {(0, 0), (1, 1), (2, 2), (3, 3), (4, 4)})
@@ -1246,7 +1248,8 @@ class ResultSetIteratorTests(BasicSharedKeyspaceUnitTestCase):
 
         @test_category query
         """
-        results = self.session.execute("SELECT * from test3rf.test")
+        query = SimpleStatement("SELECT * from test3rf.test", consistency_level=ConsistencyLevel.ALL)
+        results = self.session.execute(query)
         itered_results = set()
         for row in ResultSetIterator(results):
             itered_results.add(row)
