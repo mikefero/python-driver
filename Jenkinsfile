@@ -1,0 +1,750 @@
+#!groovy
+
+def initializeEnvironment() {
+  sh label: 'Assign Python global environment', script: '''#!/bin/bash -lex
+    pyenv global ${PYTHON_VERSION}
+  '''
+
+  sh label: 'Install socat; required for unix socket tests', script: '''#!/bin/bash -lex
+    sudo apt-get install socat
+  '''
+
+  sh label: 'Install the latest setuptools', script: '''#!/bin/bash -lex
+    pip install --upgrade pip
+    pip install -U setuptools
+  '''
+
+  sh label: 'Install CCM', script: '''#!/bin/bash -lex
+    pip install ${HOME}/ccm
+  '''
+
+  // Determine if server version is Apache Cassandra® or DataStax Enterprise
+  if (env.CASSANDRA_VERSION.split('-')[0] == 'dse') {
+    sh label: 'Install DataStax Enterprise requirements', script: '''#!/bin/bash -lex
+      pip install -r test-datastax-requirements.txt
+    '''
+  } else {
+    sh label: 'Install Apache Cassandra&reg;e requirements', script: '''#!/bin/bash -lex
+      pip install -r test-requirements.txt
+    '''
+  }
+
+  sh label: 'Install unit test modules', script: '''#!/bin/bash -lex
+    pip install nose-ignore-docstring nose-exclude service_identity
+  '''
+
+  if (params.CYTHON) {
+    sh label: 'Install cython modules', script: '''#!/bin/bash -lex
+      pip install cython numpy
+    '''
+  }
+
+  sh label: 'Download Apache Cassandra&reg; or DataStax Enterprise', script: '''#!/bin/bash -lex
+    . ${CCM_ENVIRONMENT_SHELL} ${CASSANDRA_VERSION}
+  '''
+
+  sh label: 'Display Python and environment information', script: '''#!/bin/bash -le
+    # Load CCM environment variables
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    python --version
+    pip --version
+    printenv | sort
+  '''
+}
+
+def installDriverAndCompileExtensions() {
+  if (params.CYTHON) {
+    sh label: 'Install the driver and compile with C extensions with Cython', script: '''#!/bin/bash -lex
+      python setup.py build_ext --inplace
+    '''
+  } else {
+    sh label: 'Install the driver and compile with C extensions without Cython', script: '''#!/bin/bash -lex
+      python setup.py build_ext --inplace --no-cython
+    '''
+  }
+}
+
+def executeStandardTests() {
+  /*
+   * Run the cython unit tests, this is not done in travis because it takes too much time for the
+   * whole matrix to build with cython
+   */
+  if (params.CYTHON) {
+    sh label: 'Execute Cython unit tests', script: '''#!/bin/bash -lex
+      # Load CCM environment variables
+      set -o allexport
+      . ${HOME}/environment.txt
+      set +o allexport
+
+      EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} VERIFY_CYTHON=True nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=unit_results.xml tests/unit/ || true
+      EVENT_LOOP_MANAGER=eventlet VERIFY_CYTHON=True nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=unit_eventlet_results.xml tests/unit/io/test_eventletreactor.py || true
+      EVENT_LOOP_MANAGER=gevent VERIFY_CYTHON=True nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=unit_gevent_results.xml tests/unit/io/test_geventreactor.py || true
+    '''
+  }
+
+  sh label: 'Execute Simulacron integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variables
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    SIMULACRON_JAR="${HOME}/simulacron.jar"
+    SIMULACRON_JAR=${SIMULACRON_JAR} EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CASSANDRA_DIR=${CCM_INSTALL_DIR} CCM_ARGS="${CCM_ARGS}" DSE_VERSION=${DSE_VERSION} CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=simulacron_results.xml tests/integration/simulacron/ || true
+  '''
+
+  sh label: 'Execute CQL engine integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variables
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CCM_ARGS="${CCM_ARGS}" DSE_VERSION=${DSE_VERSION} CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=cqle_results.xml tests/integration/cqlengine/ || true
+  '''
+
+  sh label: 'Execute Apache Cassandra&reg; integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variables
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CCM_ARGS="${CCM_ARGS}" DSE_VERSION=${DSE_VERSION} CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=standard_results.xml tests/integration/standard/ || true
+  '''
+
+  if (env.CASSANDRA_VERSION.split('-')[0] == 'dse' && env.CASSANDRA_VERSION.split('-')[1] != '4.8') {
+    sh label: 'Execute DataStax Enterprise integration tests', script: '''#!/bin/bash -lex
+      # Load CCM environment variable
+      set -o allexport
+      . ${HOME}/environment.txt
+      set +o allexport
+
+      EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CASSANDRA_DIR=${CCM_INSTALL_DIR} DSE_VERSION=${DSE_VERSION} ADS_HOME="${HOME}/" VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=dse_results.xml tests/integration/advanced/ || true
+    '''
+  }
+
+  sh label: 'Execute DataStax Constellation integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variable
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CLOUD_PROXY_PATH="${HOME}/proxy/" CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=advanced_results.xml tests/integration/cloud/ || true
+  '''
+
+  if (params.EXECUTE_LONG_TESTS) {
+    sh label: 'Execute long running integration tests', script: '''#!/bin/bash -lex
+      # Load CCM environment variable
+      set -o allexport
+      . ${HOME}/environment.txt
+      set +o allexport
+
+      EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CCM_ARGS="${CCM_ARGS}" DSE_VERSION=${DSE_VERSION} CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --exclude-dir=tests/integration/long/upgrade --with-ignore-docstrings --with-xunit --xunit-file=long_results.xml tests/integration/long/ || true
+    '''
+  }
+}
+
+def executeDseSmokeTests() {
+  sh label: 'Execute profile DataStax Enterprise smoke test integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variable
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CCM_ARGS="${CCM_ARGS}" CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} DSE_VERSION=${DSE_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=standard_results.xml tests/integration/standard/test_dse.py || true
+  '''
+}
+
+def executeEventLoopTests() {
+  sh label: 'Execute profile event loop manager integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variable
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_TESTS=(
+      "tests/integration/standard/test_cluster.py"
+      "tests/integration/standard/test_concurrent.py"
+      "tests/integration/standard/test_connection.py"
+      "tests/integration/standard/test_control_connection.py"
+      "tests/integration/standard/test_metrics.py"
+      "tests/integration/standard/test_query.py"
+      "tests/integration/simulacron/test_endpoint.py"
+      "tests/integration/long/test_ssl.py"
+    )
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} CCM_ARGS="${CCM_ARGS}" DSE_VERSION=${DSE_VERSION} CASSANDRA_VERSION=${CCM_CASSANDRA_VERSION} MAPPED_CASSANDRA_VERSION=${MAPPED_CASSANDRA_VERSION} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=standard_results.xml ${EVENT_LOOP_TESTS[@]} || true
+  '''
+}
+
+def executeUpgradeTests() {
+  sh label: 'Execute profile upgrade integration tests', script: '''#!/bin/bash -lex
+    # Load CCM environment variable
+    set -o allexport
+    . ${HOME}/environment.txt
+    set +o allexport
+
+    EVENT_LOOP_MANAGER=${EVENT_LOOP_MANAGER} VERIFY_CYTHON=${CYTHON_ENABLED} nosetests -s -v --logging-format="[%(levelname)s] %(asctime)s %(thread)d: %(message)s" --with-ignore-docstrings --with-xunit --xunit-file=upgrade_results.xml tests/integration/upgrade || true
+  '''
+}
+
+def executeTests() {
+  switch(params.PROFILE) {
+    case 'DSE-SMOKE-TEST':
+      executeDseSmokeTests()
+      break
+    case 'EVENT-LOOP':
+      executeEventLoopTests()
+      break
+    case 'UPGRADE':
+      executeUpgradeTests()
+      break
+    default:
+      executeStandardTests()
+      break
+  }
+}
+
+def describePerCommitStage() {
+  script {
+    def type = 'standard'
+    def serverDescription = 'current Apache Cassandara&reg; and supported DataStax Enterprise versions'
+    if (env.BRANCH_NAME ==~ /long-python.*/) {
+      type = 'long'
+    } else if (env.BRANCH_NAME ==~ /dev-python.*/) {
+      type = 'dev'
+    }
+
+    currentBuild.displayName = "Per-Commit (${env.EVENT_LOOP_MANAGER} | ${type.capitalize()})"
+    currentBuild.description = "Per-Commit build and ${type} testing of ${serverDescription} against Python v2.7.14 and v3.5.6 using ${env.EVENT_LOOP_MANAGER} event loop manager"
+  }
+}
+
+def describeScheduledTestingStage() {
+  script {
+    def type = params.CI_SCHEDULE.toLowerCase().capitalize()
+    def displayName = "${type} schedule (${env.EVENT_LOOP_MANAGER}"
+    if (params.CYTHON) {
+      displayName += " | Cython"
+    }
+    if (params.PROFILE != 'NONE') {
+      displayName += " | ${params.PROFILE}"
+    }
+    displayName += ")"
+    currentBuild.displayName = displayName
+
+    def serverVersionDescription = "${params.CI_SCHEDULE_SERVER_VERSION.replaceAll(' ', ', ')} server version(s) in the matrix"
+    def pythonVersionDescription = "${params.CI_SCHEDULE_PYTHON_VERSION.replaceAll(' ', ', ')} Python version(s) in the matrix"
+    def description = "${type} scheduled testing using ${env.EVENT_LOOP_MANAGER} event loop manager"
+    if (params.CYTHON) {
+      description += ", with Cython enabled"
+    }
+    if (params.PROFILE != 'NONE') {
+      description += ", ${params.PROFILE} profile"
+    }
+    description += ", ${serverVersionDescription}, and ${pythonVersionDescription}"
+    currentBuild.description = description
+  }
+}
+
+def describeAdhocTestingStage() {
+  script {
+    def serverType = params.ADHOC_BUILD_AND_EXECUTE_TESTS_SERVER_VERSION.split('-')[0]
+    def serverDisplayName = 'Apache Cassandara&reg;'
+    def serverVersion = " v${serverType}"
+    if (serverType == 'ALL') {
+      serverDisplayName = "all ${serverDisplayName} and DataStax Enterprise server versions"
+      serverVersion = ''
+    } else {
+      try {
+        serverVersion = " v${env.ADHOC_BUILD_AND_EXECUTE_TESTS_SERVER_VERSION.split('-')[1]}"
+      } catch (e) {
+        ;; // no-op
+      }
+      if (serverType == 'ddac') {
+        serverDisplayName = "DataStax Distribution of ${serverDisplayName}"
+      } else if (serverType == 'dse') {
+        serverDisplayName = 'DataStax Enterprise'
+      }
+    }
+    def displayName = "${params.ADHOC_BUILD_AND_EXECUTE_TESTS_SERVER_VERSION} for v${params.ADHOC_BUILD_AND_EXECUTE_TESTS_PYTHON_VERSION} (${env.EVENT_LOOP_MANAGER}"
+    if (params.CYTHON) {
+      displayName += " | Cython"
+    }
+    if (params.PROFILE != 'NONE') {
+      displayName += " | ${params.PROFILE}"
+    }
+    displayName += ")"
+    currentBuild.displayName = displayName
+
+    def description = "Testing ${serverDisplayName} ${serverVersion} using ${env.EVENT_LOOP_MANAGER} against Python ${params.ADHOC_BUILD_AND_EXECUTE_TESTS_PYTHON_VERSION}"
+    if (params.CYTHON) {
+      description += ", with Cython"
+    }
+    if (params.PROFILE == 'NONE') {
+      if (params.EXECUTE_LONG_TESTS) {
+        description += ", with"
+      } else {
+        description += ", without"
+      }
+      description += " long tests executed"
+    } else {
+      description += ", ${params.PROFILE} profile"
+    }
+    currentBuild.description = description
+  }
+}
+
+pipeline {
+  agent none
+
+  // Global pipeline timeout
+  options {
+    timeout(time: 10, unit: 'HOURS')
+    buildDiscarder(logRotator(artifactNumToKeepStr: '10', // Keep only the last 10 artifacts
+                              numToKeepStr: '50'))        // Keep only the last 50 build records
+  }
+
+  parameters {
+    choice(
+      name: 'ADHOC_BUILD_TYPE',
+      choices: ['BUILD', 'BUILD-AND-EXECUTE-TESTS'],
+      description: '''<p>Perform a adhoc build operation</p>
+                      <table style="width:100%">
+                        <col width="25%">
+                        <col width="75%">
+                        <tr>
+                          <th align="left">Choice</th>
+                          <th align="left">Description</th>
+                        </tr>
+                        <tr>
+                          <td><strong>BUILD</strong></td>
+                          <td>Performs a <b>Per-Commit</b> build</td>
+                        </tr>
+                        <tr>
+                          <td><strong>BUILD-AND-EXECUTE-TESTS</strong></td>
+                          <td>Performs a build and executes the integration and unit tests</td>
+                        </tr>
+                      </table>''')
+    choice(
+      name: 'ADHOC_BUILD_AND_EXECUTE_TESTS_PYTHON_VERSION',
+      choices: ['2.7.14', '3.4.9', '3.5.6', '3.6.6', '3.7.4', '3.8.0'],
+      description: 'Python version to use for adhoc <b>BUILD-AND-EXECUTE-TESTS</b> <strong>ONLY!</strong>')
+    choice(
+      name: 'ADHOC_BUILD_AND_EXECUTE_TESTS_SERVER_VERSION',
+      choices: ['2.1',      // Legacy Apache Cassandara®
+                '2.2',      // Legacy Apache Cassandara®
+                '3.0',      // Previous Apache Cassandara®
+                '3.11',     // Current Apache Cassandara®
+                '4.0',      // Development Apache Cassandara®
+                'ddac-5.1', // Current DataStax Distribution of Apache Cassandara®
+                'dse-5.0',  // Long Term Support DataStax Enterprise
+                'dse-5.1',  // Legacy DataStax Enterprise
+                'dse-6.0',  // Previous DataStax Enterprise
+                'dse-6.7',  // Current DataStax Enterprise
+                'dse-6.8',  // Development DataStax Enterprise
+                'ALL'],
+      description: '''Apache Cassandara&reg; and DataStax Enterprise server version to use for adhoc <b>BUILD-AND-EXECUTE-TESTS</b> <strong>ONLY!</strong>
+                      <table style="width:100%">
+                        <col width="15%">
+                        <col width="85%">
+                        <tr>
+                          <th align="left">Choice</th>
+                          <th align="left">Description</th>
+                        </tr>
+                        <tr>
+                          <td><strong>2.1</strong></td>
+                          <td>Apache Cassandara&reg; v2.1.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>2.2</strong></td>
+                          <td>Apache Cassandara&reg; v2.2.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>3.0</strong></td>
+                          <td>Apache Cassandara&reg; v3.0.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>3.11</strong></td>
+                          <td>Apache Cassandara&reg; v3.11.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>4.0</strong></td>
+                          <td>Apache Cassandara&reg; v4.x (<b>CURRENTLY UNDER DEVELOPMENT</b>)</td>
+                        </tr>
+                        <tr>
+                          <td><strong>ddac-5.1</strong></td>
+                          <td>DataStax Distribution of Apache Cassandara&reg; v5.1.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>dse-5.0</strong></td>
+                          <td>DataStax Enterprise v5.0.x (<b>Long Term Support</b>)</td>
+                        </tr>
+                        <tr>
+                          <td><strong>dse-5.1</strong></td>
+                          <td>DataStax Enterprise v5.1.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>dse-6.0</strong></td>
+                          <td>DataStax Enterprise v6.0.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>dse-6.7</strong></td>
+                          <td>DataStax Enterprise v6.7.x</td>
+                        </tr>
+                        <tr>
+                          <td><strong>dse-6.8</strong></td>
+                          <td>DataStax Enterprise v6.8.x (<b>CURRENTLY UNDER DEVELOPMENT</b>)</td>
+                        </tr>
+                      </table>''')
+    booleanParam(
+      name: 'CYTHON',
+      defaultValue: false,
+      description: 'Flag to determine if Cython should be enabled for scheduled or adhoc builds')
+    booleanParam(
+      name: 'EXECUTE_LONG_TESTS',
+      defaultValue: true,
+      description: 'Flag to determine if long integration tests should be executed for scheduled or adhoc builds')
+    choice(
+      name: 'EVENT_LOOP_MANAGER',
+      choices: ['LIBEV', 'GEVENT', 'EVENTLET', 'ASYNCIO', 'ASYNCORE', 'TWISTED'],
+      description: '''<p>Event loop manager to utilize for scheduled or adhoc builds</p>
+                      <table style="width:100%">
+                        <col width="25%">
+                        <col width="75%">
+                        <tr>
+                          <th align="left">Choice</th>
+                          <th align="left">Description</th>
+                        </tr>
+                        <tr>
+                          <td><strong>LIBEV</strong></td>
+                          <td>A full-featured and high-performance event loop that is loosely modeled after libevent, but without its limitations and bugs</td>
+                        </tr>
+                        <tr>
+                          <td><strong>GEVENT</strong></td>
+                          <td>A co-routine -based Python networking library that uses greenlet to provide a high-level synchronous API on top of the libev or libuv event loop</td>
+                        </tr>
+                        <tr>
+                          <td><strong>EVENTLET</strong></td>
+                          <td>A concurrent networking library for Python that allows you to change how you run your code, not how you write it</td>
+                        </tr>
+                        <tr>
+                          <td><strong>ASYNCIO</strong></td>
+                          <td>A library to write concurrent code using the async/await syntax</td>
+                        </tr>
+                        <tr>
+                          <td><strong>ASYNCORE</strong></td>
+                          <td>A module provides the basic infrastructure for writing asynchronous socket service clients and servers</td>
+                        </tr>
+                        <tr>
+                          <td><strong>TWISTED</strong></td>
+                          <td>An event-driven networking engine written in Python and licensed under the open source MIT license</td>
+                        </tr>
+                      </table>''')
+    choice(
+      name: 'PROFILE',
+      choices: ['NONE', 'DSE-SMOKE-TEST', 'EVENT-LOOP', 'UPGRADE'],
+      description: '''<p>Profile to utilize for scheduled or adhoc builds</p>
+                      <table style="width:100%">
+                        <col width="25%">
+                        <col width="75%">
+                        <tr>
+                          <th align="left">Choice</th>
+                          <th align="left">Description</th>
+                        </tr>
+                        <tr>
+                          <td><strong>NONE</strong></td>
+                          <td>Execute the standard tests for the driver</td>
+                        </tr>
+                        <tr>
+                          <td><strong>DSE-SMOKE-TEST</strong></td>
+                          <td>Execute only the DataStax Enterprise smoke tests</td>
+                        </tr>
+                        <tr>
+                          <td><strong>EVENT-LOOP</strong></td>
+                          <td>Execute only the event loop tests for the specified event loop manager (see: <b>EVENT_LOOP_MANAGER</b>)</td>
+                        </tr>
+                        <tr>
+                          <td><strong>UPGRADE</strong></td>
+                          <td>Execute only the upgrade tests</td>
+                        </tr>
+                      </table>''')
+    choice(
+      name: 'CI_SCHEDULE',
+      choices: ['DO-NOT-CHANGE-THIS-SELECTION', 'WEEKNIGHTS', 'WEEKENDS'],
+      description: 'CI testing schedule to execute periodically scheduled builds and tests of the driver (<strong>DO NOT CHANGE THIS SELECTION</strong>)')
+    string(
+      name: 'CI_SCHEDULE_PYTHON_VERSION',
+      defaultValue: 'DO-NOT-CHANGE-THIS-SELECTION',
+      description: 'CI testing python version to utilize for scheduled test runs of the driver (<strong>DO NOT CHANGE THIS SELECTION</strong>)')
+    string(
+      name: 'CI_SCHEDULE_SERVER_VERSION',
+      defaultValue: 'DO-NOT-CHANGE-THIS-SELECTION',
+      description: 'CI testing server version to utilize for scheduled test runs of the driver (<strong>DO NOT CHANGE THIS SELECTION</strong>)')
+  }
+
+  triggers {
+    parameterizedCron("""
+      # Every weeknight (Monday - Friday) around 4:00 AM
+      # These schedules will run with and without Cython enabled for Python v2.7.14 and v3.5.6
+      H 4 * * 1-5 %CI_SCHEDULE=WEEKNIGHTS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.2 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 4 * * 1-5 %CI_SCHEDULE=WEEKNIGHTS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=3.5.6;CI_SCHEDULE_SERVER_VERSION='2.2 3.11 dse-5.1 dse-6.0 dse-6.7'
+
+      # Every Saturday around 12:00, 4:00 and 8:00 PM
+      # These schedules are for weekly libev event manager runs with and without Cython for most of the Python versions (excludes v3.5.6.x)
+      H 12 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.1 3.0 dse-5.1 dse-6.0 dse-6.7'
+      H 12 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=3.4.9;CI_SCHEDULE_SERVER_VERSION='2.1 3.0 dse-5.1 dse-6.0 dse-6.7'
+      H 12 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=3.6.6;CI_SCHEDULE_SERVER_VERSION='2.1 3.0 dse-5.1 dse-6.0 dse-6.7'
+      H 12 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=3.7.4;CI_SCHEDULE_SERVER_VERSION='2.1 3.0 dse-5.1 dse-6.0 dse-6.7'
+      H 12 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=LIBEV;CI_SCHEDULE_PYTHON_VERSION=3.8.0;CI_SCHEDULE_SERVER_VERSION='2.1 3.0 dse-5.1 dse-6.0 dse-6.7'
+      # These schedules are for weekly gevent event manager event loop only runs with and without Cython for most of the Python versions (excludes v3.4.9.x)
+      H 16 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=GEVENT;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 16 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=GEVENT;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.5.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 16 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=GEVENT;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.6.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 16 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=GEVENT;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.7.4;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 16 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=GEVENT;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.8.0;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      # These schedules are for weekly eventlet event manager event loop only runs with and without Cython for most of the Python versions (excludes v3.4.9.x)
+      H 20 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=EVENTLET;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 20 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=EVENTLET;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.5.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 20 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=EVENTLET;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.6.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 20 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=EVENTLET;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.7.4;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 20 * * 6 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=EVENTLET;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.8.0;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+
+      # Every Sunday around 12:00 and 4:00 AM
+      # These schedules are for weekly asyncore event manager event loop only runs with and without Cython for most of the Python versions (excludes v3.4.9.x)
+      H 0 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=ASYNCORE;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 0 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=ASYNCORE;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.5.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 0 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=ASYNCORE;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.6.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 0 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=ASYNCORE;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.7.4;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 0 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=ASYNCORE;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.8.0;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      # These schedules are for weekly twisted event manager event loop only runs with and without Cython for most of the Python versions (excludes v3.4.9.x)
+      H 4 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=TWISTED;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=2.7.14;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 4 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=TWISTED;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.5.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 4 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=TWISTED;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.6.6;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 4 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=TWISTED;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.7.4;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+      H 4 * * 7 %CI_SCHEDULE=WEEKENDS;EVENT_LOOP_MANAGER=TWISTED;PROFILE=EVENT-LOOP;CI_SCHEDULE_PYTHON_VERSION=3.8.0;CI_SCHEDULE_SERVER_VERSION='2.1 2.2 3.0 3.11 dse-5.1 dse-6.0 dse-6.7'
+    """)
+  }
+
+  environment {
+    OS_VERSION = 'ubuntu/bionic64/python-driver'
+    CYTHON_ENABLED = "${params.CYTHON ? 'True' : 'False'}"
+    EVENT_LOOP_MANAGER = "${params.EVENT_LOOP_MANAGER.toLowerCase()}"
+    EXECUTE_LONG_TESTS = "${params.EXECUTE_LONG_TESTS ? 'True' : 'False'}"
+    CCM_ENVIRONMENT_SHELL = '/usr/local/bin/ccm_environment.sh'
+  }
+
+  stages {
+    stage ('Per-Commit') {
+      when {
+        beforeAgent true
+        branch pattern: '((dev|long)-)+python.*', comparator: 'REGEXP'
+        allOf {
+          expression { params.ADHOC_BUILD_TYPE == 'BUILD' }
+          expression { params.CI_SCHEDULE == 'DO-NOT-CHANGE-THIS-SELECTION' }
+          not { buildingTag() }
+        }
+      }
+
+      matrix {
+        axes {
+          axis {
+            name 'CASSANDRA_VERSION'
+            values '3.11',    // Current Apache Cassandara®
+                   'dse-5.1', // Legacy DataStax Enterprise
+                   'dse-6.0', // Previous DataStax Enterprise
+                   'dse-6.7'  // Current DataStax Enterprise
+          }
+          axis {
+            name 'PYTHON_VERSION'
+            values '2.7.14', '3.5.6'
+          }
+          axis {
+            name 'CYTHON_ENABLED'
+            values 'True', 'False'
+          }
+        }
+
+        agent {
+          label "${OS_VERSION}"
+        }
+
+        stages {
+          stage('Describe-Build') {
+            steps {
+              describePerCommitStage()
+            }
+          }
+          stage('Initialize-Environment') {
+            steps {
+              initializeEnvironment()
+            }
+          }
+          stage('Install-Driver-And-Compile-Extensions') {
+            steps {
+              installDriverAndCompileExtensions()
+            }
+          }
+          stage('Execute-Tests') {
+            steps {
+              script {
+                if (env.BRANCH_NAME !=~ /long-python.*/) {
+                  env.EXECUTE_LONG_TESTS = 'False'
+                }
+              }
+              executeTests()
+            }
+            post {
+              always {
+                junit testResults: '*_results.xml'
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage ('Scheduled-Testing') {
+      when {
+        beforeAgent true
+        branch 'master'
+        allOf {
+          expression { params.ADHOC_BUILD_TYPE == 'BUILD' }
+          expression { params.CI_SCHEDULE != 'DO-NOT-CHANGE-THIS-SELECTION' }
+          not { buildingTag() }
+        }
+      }
+      matrix {
+        axes {
+          axis {
+            name 'CASSANDRA_VERSION'
+            values '2.1',     // Legacy Apache Cassandara®
+                   '2.2',     // Legacy Apache Cassandara®
+                   '3.0',     // Previous Apache Cassandara®
+                   '3.11',    // Current Apache Cassandara®
+                   'dse-5.1', // Legacy DataStax Enterprise
+                   'dse-6.0', // Previous DataStax Enterprise
+                   'dse-6.7'  // Current DataStax Enterprise
+          }
+          axis {
+            name 'CYTHON_ENABLED'
+            values 'True', 'False'
+          }
+        }
+        when {
+          beforeAgent true
+          allOf {
+            expression { return params.CI_SCHEDULE_SERVER_VERSION.split(' ').any { it =~ /(ALL|${env.CASSANDRA_VERSION})/ } }
+          }
+        }
+
+        environment {
+          PYTHON_VERSION = "${params.CI_SCHEDULE_PYTHON_VERSION}"
+        }
+        agent {
+          label "${OS_VERSION}"
+        }
+
+        stages {
+          stage('Describe-Build') {
+            steps {
+              describeScheduledTestingStage()
+            }
+          }
+          stage('Initialize-Environment') {
+            steps {
+              initializeEnvironment()
+            }
+          }
+          stage('Install-Driver-And-Compile-Extensions') {
+            steps {
+              installDriverAndCompileExtensions()
+            }
+          }
+          stage('Execute-Tests') {
+            steps {
+              executeTests()
+            }
+            post {
+              always {
+                junit testResults: '*_results.xml'
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Adhoc-Testing') {
+      when {
+        beforeAgent true
+        allOf {
+          expression { params.ADHOC_BUILD_TYPE == 'BUILD-AND-EXECUTE-TESTS' }
+          not { buildingTag() }
+        }
+      }
+
+      environment {
+        CYTHON_ENABLED = "${params.CYTHON ? 'True' : 'False'}"
+        PYTHON_VERSION = "${params.ADHOC_BUILD_AND_EXECUTE_TESTS_PYTHON_VERSION}"
+      }
+
+      matrix {
+        axes {
+          axis {
+            name 'CASSANDRA_VERSION'
+            values '2.1',      // Legacy Apache Cassandara®
+                   '2.2',      // Legacy Apache Cassandara®
+                   '3.0',      // Previous Apache Cassandara®
+                   '3.11',     // Current Apache Cassandara®
+                   '4.0',      // Development Apache Cassandara®
+                   'ddac-5.1', // Current DataStax Distribution of Apache Cassandara®
+                   'dse-5.0',  // Long Term Support DataStax Enterprise
+                   'dse-5.1',  // Legacy DataStax Enterprise
+                   'dse-6.0',  // Previous DataStax Enterprise
+                   'dse-6.7',  // Current DataStax Enterprise
+                   'dse-6.8'   // Development DataStax Enterprise
+          }
+        }
+        when {
+          beforeAgent true
+          allOf {
+            expression { params.ADHOC_BUILD_AND_EXECUTE_TESTS_SERVER_VERSION ==~ /(ALL|${env.CASSANDRA_VERSION})/ }
+          }
+        }
+
+        agent {
+          label "${OS_VERSION}"
+        }
+
+        stages {
+          stage('Describe-Build') {
+            steps {
+              describeAdhocTestingStage()
+            }
+          }
+          stage('Initialize-Environment') {
+            steps {
+              initializeEnvironment()
+            }
+          }
+          stage('Install-Driver-And-Compile-Extensions') {
+            steps {
+              installDriverAndCompileExtensions()
+            }
+          }
+          stage('Execute-Tests') {
+            steps {
+              executeTests()
+            }
+            post {
+              always {
+                junit testResults: '*_results.xml'
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
